@@ -1,0 +1,17 @@
+{
+  "author": "tuannguyen14",
+  "name": "httptoolkit-pro-patcher-2026",
+  "version": "7.0.0",
+  "description": "Patcher that unlocks Pro features for HTTP Toolkit",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node . start"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@electron/asar": "^3.2.9",
+    "chalk": "4",
+    "yargs": "^17.7.2"
+  }
+}
