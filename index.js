@@ -203,7 +203,7 @@ const patchApp = async () => {
   const data = fs.readFileSync(indexPath, 'utf-8')
   const patch = fs.readFileSync(path.join(__dirname, 'patch.js'), 'utf-8')
   const patchedData = data
-    .replace('const APP_URL =', `// ------- Injected by HTTP Toolkit Patcher -------\nconst email = \`${email.replaceAll('`', '\\`')}\`\n${patch}\n// ------- End patched content -------\nconst APP_URL =`)
+    .replace('const APP_URL =', `// ------- Injected by HTTP Toolkit Patcher -------\n;((email) => {\n${patch}\n})(\`${email.replaceAll('`', '\\`')}\`);\n// ------- End patched content -------\nconst APP_URL =`)
 
   if (data === patchedData || !patchedData) {
     console.error(chalk.redBright`[-] Patch failed`)
