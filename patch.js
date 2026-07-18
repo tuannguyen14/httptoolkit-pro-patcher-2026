@@ -176,13 +176,27 @@ const _sendText = (res, text, statusCode = 200) => {
     }
   })
 
+  // Safety net: prevent Electron uncaughtException dialog for EADDRINUSE on this port
+  process.on('uncaughtException', err => {
+    if (err && err.code === 'EADDRINUSE' && String(err.message).includes(String(_patcherPort))) {
+      _log(`Ignoring EADDRINUSE on port ${_patcherPort}`)
+      return
+    }
+    throw err
+  })
+
   const _isPortInUse = port => new Promise(resolve => {
-    const client = http.get({ host: '127.0.0.1', port, path: '/', timeout: 300 }, () => {
-      resolve(true)
-      client.destroy()
+    const net = require('node:net')
+    const tester = net.createServer()
+    tester.once('error', err => {
+      tester.removeAllListeners()
+      resolve(err.code === 'EADDRINUSE')
     })
-    client.on('error', () => resolve(false))
-    client.on('timeout', () => { client.destroy(); resolve(false) })
+    tester.once('listening', () => {
+      tester.removeAllListeners()
+      tester.close(() => resolve(false))
+    })
+    tester.listen({ port, host: '127.0.0.1' })
   })
 
   const portInUse = await _isPortInUse(_patcherPort)
@@ -191,7 +205,6 @@ const _sendText = (res, text, statusCode = 200) => {
     return
   }
 
-  server.listen(_patcherPort, () => _log(`Server listening on port ${_patcherPort}`))
   server.on('error', err => {
     if (err.code === 'EADDRINUSE') {
       _log(`Port ${_patcherPort} already in use, another patcher instance is likely running`)
@@ -199,4 +212,5 @@ const _sendText = (res, text, statusCode = 200) => {
     }
     _logError('Patcher server error', err)
   })
+  server.listen(_patcherPort, () => _log(`Server listening on port ${_patcherPort}`))
 })().catch(err => _logError('Fatal patcher error', err))
