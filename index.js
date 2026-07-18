@@ -7,6 +7,7 @@ import chalk from 'chalk'
 import fs from 'fs'
 import os from 'os'
 import { fileURLToPath } from 'url'
+import { flipFuses, FuseV1Options, FuseVersion } from '@electron/fuses'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -213,6 +214,26 @@ const patchApp = async () => {
   fs.copyFileSync(filePath, `${filePath}.bak`)
   console.log(chalk.blueBright`[+] Building app...`)
   await asar.createPackage(tempPath, filePath)
+
+  // On Windows, Electron verifies asar integrity hash. Disable the fuse after repackaging.
+  if (isWin) {
+    const exePath = path.join(appPath, 'HTTP Toolkit.exe')
+    if (fs.existsSync(exePath)) {
+      console.log(chalk.blueBright`[+] Disabling asar integrity check...`)
+      try {
+        if (!fs.existsSync(`${exePath}.bak`)) fs.copyFileSync(exePath, `${exePath}.bak`)
+        await flipFuses(exePath, {
+          version: FuseVersion.V1,
+          [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
+        })
+        console.log(chalk.greenBright`[+] Asar integrity check disabled`)
+      } catch (e) {
+        console.error(chalk.redBright`[-] Failed to disable asar integrity check`, e)
+        process.exit(1)
+      }
+    }
+  }
+
   console.log(chalk.greenBright`[+] App patched`)
 }
 
@@ -236,6 +257,15 @@ switch (argv._[0]) {
       else {
         fs.copyFileSync(path.join(appPath, 'resources', 'app.asar.bak'), path.join(appPath, 'resources', 'app.asar'))
         console.log(chalk.greenBright`[+] App restored`)
+      }
+      if (isWin) {
+        const exePath = path.join(appPath, 'HTTP Toolkit.exe')
+        const exeBakPath = `${exePath}.bak`
+        if (fs.existsSync(exeBakPath)) {
+          console.log(chalk.blueBright`[+] Restoring executable...`)
+          fs.copyFileSync(exeBakPath, exePath)
+          console.log(chalk.greenBright`[+] Executable restored`)
+        }
       }
       fs.rmSync(path.join(os.tmpdir(), 'httptoolkit-patch'), { recursive: true, force: true })
     } catch (e) {
