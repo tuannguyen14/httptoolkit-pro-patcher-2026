@@ -177,4 +177,11 @@ const _sendText = (res, text, statusCode = 200) => {
   })
 
   server.listen(_patcherPort, () => _log(`Server listening on port ${_patcherPort}`))
+  server.on('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      _log(`Port ${_patcherPort} already in use, another patcher instance is likely running`)
+      return
+    }
+    _logError('Patcher server error', err)
+  })
 })().catch(err => _logError('Fatal patcher error', err))
