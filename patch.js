@@ -176,6 +176,21 @@ const _sendText = (res, text, statusCode = 200) => {
     }
   })
 
+  const _isPortInUse = port => new Promise(resolve => {
+    const client = http.get({ host: '127.0.0.1', port, path: '/', timeout: 300 }, () => {
+      resolve(true)
+      client.destroy()
+    })
+    client.on('error', () => resolve(false))
+    client.on('timeout', () => { client.destroy(); resolve(false) })
+  })
+
+  const portInUse = await _isPortInUse(_patcherPort)
+  if (portInUse) {
+    _log(`Patcher server already running on port ${_patcherPort}, skipping`)
+    return
+  }
+
   server.listen(_patcherPort, () => _log(`Server listening on port ${_patcherPort}`))
   server.on('error', err => {
     if (err.code === 'EADDRINUSE') {
