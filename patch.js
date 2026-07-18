@@ -17,6 +17,7 @@ const _sendText = (res, text, statusCode = 200) => {
   const os = await import('node:os')
   const http = await import('node:http')
   const https = await import('node:https')
+  const net = await import('node:net')
   const tempPath = path.join(os.tmpdir(), 'httptoolkit-patch')
   _log(`Selected temp path: ${tempPath}`)
 
@@ -186,7 +187,6 @@ const _sendText = (res, text, statusCode = 200) => {
   })
 
   const _isPortInUse = port => new Promise(resolve => {
-    const net = require('node:net')
     const tester = net.createServer()
     tester.once('error', err => {
       tester.removeAllListeners()
