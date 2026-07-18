@@ -92,76 +92,65 @@ const patchServer = () => {
   const filePath = path.join(serverPath, 'bundle', 'index.js')
   const data = fs.readFileSync(filePath, 'utf-8')
 
-  const hasFirstPatch = data.includes('ALLOWED_ORIGINS=false') || data.includes('corsOptions:{strict:!1,origin:!0')
-  const hasSecondPatch = data.includes('T()({strict:!1,allowSafe:!0,origin:"http://localhost:5067"')
-  const hasThirdPatch = data.includes('var ei=!1')
-  if (hasFirstPatch && hasSecondPatch && hasThirdPatch) {
+  const isPatched = data.includes('ALLOWED_ORIGINS=false')
+    || data.includes('corsOptions:{strict:!1,origin:!0')
+    || data.includes('T()({strict:!1,allowSafe:!0,origin:!0')
+    || data.includes('T()({strict:!1,allowSafe:!0,origin:"http://localhost:5067"')
+    || data.includes('var ei=!1')
+    || data.includes('__HTK_PATCHED_ISPAID__')
+  if (!isPatched) {
+    console.log(chalk.yellowBright`[!] Server patch skipped (patterns not found, server version may not need patching)`)
+    return
+  }
+  if (isPatched && data.includes('__HTK_PATCHED_ISPAID__')) {
     console.log(chalk.greenBright`[+] Server already patched`)
     return
   }
 
+  console.log(chalk.blueBright`[+] Patching server...`)
+  let patchedData = data
+
   // Old pattern for legacy server versions
-  if (data.includes('ALLOWED_ORIGINS') && data.includes('IS_PROD_BUILD')) {
-    console.log(chalk.blueBright`[+] Patching server...`)
-    const patchedData = data.replace(/ALLOWED_ORIGINS=\w\.IS_PROD_BUILD/g, 'ALLOWED_ORIGINS=false')
-    if (data !== patchedData) {
-      fs.writeFileSync(`${filePath}.bak`, data, 'utf-8')
-      fs.writeFileSync(filePath, patchedData, 'utf-8')
-      console.log(chalk.greenBright`[+] Server patched`)
-      return
-    }
-  }
+  patchedData = patchedData.replace(/ALLOWED_ORIGINS=\w\.IS_PROD_BUILD/g, 'ALLOWED_ORIGINS=false')
 
   // New pattern: disable strict CORS origin check so UI loaded from localhost:5067 can connect
-  if (data.includes('corsOptions:{strict:!0,origin:')) {
-    console.log(chalk.blueBright`[+] Patching server CORS...`)
-    const patchedData = data.replace(/corsOptions:\{strict:!0,origin:[A-Za-z_$][A-Za-z0-9_$]*/, 'corsOptions:{strict:!1,origin:!0')
-    if (data !== patchedData) {
-      fs.writeFileSync(`${filePath}.bak`, data, 'utf-8')
-      fs.writeFileSync(filePath, patchedData, 'utf-8')
-      console.log(chalk.greenBright`[+] Server patched`)
-      return
-    }
-  }
+  patchedData = patchedData.replace(/corsOptions:\{strict:!0,origin:[A-Za-z_$][A-Za-z0-9_$]*/, 'corsOptions:{strict:!1,origin:!0')
 
-  // API server custom CORS middleware: strict with origin:"" rejects all origins. Allow localhost:5067.
-  if (data.includes('T()({strict:!0,allowSafe:!1,origin:""')) {
-    console.log(chalk.blueBright`[+] Patching API server CORS...`)
-    let patchedData = data.replace('T()({strict:!0,allowSafe:!1,origin:""', 'T()({strict:!1,allowSafe:!0,origin:"http://localhost:5067"')
-    if (data !== patchedData) {
-      fs.writeFileSync(`${filePath}.bak`, data, 'utf-8')
-      fs.writeFileSync(filePath, patchedData, 'utf-8')
-      console.log(chalk.greenBright`[+] Server patched`)
-      return
-    }
-  }
+  // API server custom CORS middleware: strict with origin:"" rejects all origins. Allow any origin.
+  patchedData = patchedData.replace('T()({strict:!0,allowSafe:!1,origin:""', 'T()({strict:!1,allowSafe:!0,origin:!0')
 
   // Force dev-mode origin allowlist (localhost, 127.0.0.x, local.httptoolkit.tech, app.httptoolkit.tech)
-  if (data.includes('var ei=!!process.env.HTTPTOOLKIT_SERVER_BINPATH')) {
-    console.log(chalk.blueBright`[+] Patching server origin allowlist...`)
-    const patchedData = data.replace('var ei=!!process.env.HTTPTOOLKIT_SERVER_BINPATH', 'var ei=!1')
-    if (data !== patchedData) {
-      fs.writeFileSync(`${filePath}.bak`, data, 'utf-8')
-      fs.writeFileSync(filePath, patchedData, 'utf-8')
-      console.log(chalk.greenBright`[+] Server patched`)
-      return
-    }
-  }
+  patchedData = patchedData.replace('var ei=!!process.env.HTTPTOOLKIT_SERVER_BINPATH', 'var ei=!1')
 
-  console.log(chalk.yellowBright`[!] Server patch skipped (patterns not found, server version may not need patching)`)
+  // Force isPaidUser() to always return true so MCP/CTL operations are not blocked by Pro tier check
+  patchedData = patchedData.replace(
+    /isPaidUser"?,?value:function\(\)\{var e,A,t;return null!=\(e=null==\(t=this\.primaryChannel\)\|\|null==\(A=t\.user\)\?void 0:A\.isPaidUser\(\)\)&&e\}/,
+    'isPaidUser",value:function(){return!0}/*__HTK_PATCHED_ISPAID__*/'
+  )
+
+  if (data !== patchedData) {
+    fs.writeFileSync(`${filePath}.bak`, data, 'utf-8')
+    fs.writeFileSync(filePath, patchedData, 'utf-8')
+    console.log(chalk.greenBright`[+] Server patched`)
+  } else {
+    console.log(chalk.greenBright`[+] Server already patched`)
+  }
 }
 
 const patchApp = async () => {
   try {
-    console.log(chalk.blueBright`[+] Cleaning up port 5067...`)
+    console.log(chalk.blueBright`[+] Cleaning up old processes...`)
     if (isWin) {
       execSync('powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 5067 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"', { stdio: 'ignore' })
       execSync('taskkill /F /IM "HTTP Toolkit.exe" 2>nul', { stdio: 'ignore' })
+      // Kill old httptoolkit-server node.exe processes that hold the named pipe
+      execSync('powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name=\'node.exe\'\\" | Where-Object CommandLine -match \'httptoolkit-server\' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"', { stdio: 'ignore' })
     } else {
       execSync('kill $(lsof -t -i:5067) 2>/dev/null || true', { stdio: 'ignore' })
       execSync('pkill -f "/opt/HTTP Toolkit/httptoolkit" 2>/dev/null || true', { stdio: 'ignore' })
+      execSync('pkill -f "httptoolkit-server" 2>/dev/null || true', { stdio: 'ignore' })
     }
-    await new Promise(r => setTimeout(r, 500))
+    await new Promise(r => setTimeout(r, 1000))
   } catch (e) { /* ignore */ }
 
   const email = 'tuannguyen7067@gmail.com'
@@ -169,14 +158,22 @@ const patchApp = async () => {
   const filePath = path.join(appPath, 'resources', 'app.asar')
   const tempPath = path.join(appPath, 'resources', 'app')
 
-  const needsPatch = () => !fs.readFileSync(filePath).includes('Injected by HTTP Toolkit Patcher')
+  const patch = fs.readFileSync(path.join(__dirname, 'patch.js'), 'utf-8')
+  const patchSignature = patch
+  const needsPatch = () => {
+    const asarData = fs.readFileSync(filePath)
+    return !asarData.includes('Injected by HTTP Toolkit Patcher') || !asarData.includes(patchSignature)
+  }
   const needsServerPatch = () => {
     const sp = path.join(serverPath, 'bundle', 'index.js')
     const data = fs.readFileSync(sp, 'utf-8')
-    const hasFirst = data.includes('ALLOWED_ORIGINS=false') || data.includes('corsOptions:{strict:!1,origin:!0')
-    const hasSecond = data.includes('T()({strict:!1,allowSafe:!0,origin:"http://localhost:5067"')
-    const hasThird = data.includes('var ei=!1')
-    return !(hasFirst && hasSecond && hasThird)
+    const isPatched = data.includes('ALLOWED_ORIGINS=false')
+      || data.includes('corsOptions:{strict:!1,origin:!0')
+      || data.includes('T()({strict:!1,allowSafe:!0,origin:!0')
+      || data.includes('T()({strict:!1,allowSafe:!0,origin:"http://localhost:5067"')
+      || data.includes('var ei=!1')
+      || data.includes('__HTK_PATCHED_ISPAID__')
+    return !isPatched
   }
 
   if (!needsPatch() && !needsServerPatch()) {
@@ -200,8 +197,20 @@ const patchApp = async () => {
   }
 
   const indexPath = path.join(tempPath, 'build', 'index.js')
-  const data = fs.readFileSync(indexPath, 'utf-8')
-  const patch = fs.readFileSync(path.join(__dirname, 'patch.js'), 'utf-8')
+  let data = fs.readFileSync(indexPath, 'utf-8')
+
+  // Strip any previously injected patch content (including nested re-patches)
+  while (data.includes('// ------- Injected by HTTP Toolkit Patcher -------')) {
+    const start = data.indexOf('// ------- Injected by HTTP Toolkit Patcher -------')
+    const endMarker = '// ------- End patched content -------\n'
+    const end = data.indexOf(endMarker, start)
+    if (end === -1) {
+      console.error(chalk.redBright`[-] Could not find end of existing patch`)
+      process.exit(1)
+    }
+    data = data.slice(0, start) + data.slice(end + endMarker.length)
+  }
+
   const patchedData = data
     .replace('const APP_URL =', `// ------- Injected by HTTP Toolkit Patcher -------\n;((email) => {\n${patch}\n})(\`${email.replaceAll('`', '\\`')}\`);\n// ------- End patched content -------\nconst APP_URL =`)
 

@@ -135,6 +135,8 @@ const _sendText = (res, text, statusCode = 200) => {
         else {
           let patched = textData
             .replace(`class ${accStoreName}{`, `["getLatestUserData","getLastUserData"].forEach(p=>Object.defineProperty(${modName},p,{value:()=>user}));class ${accStoreName}{`)
+            // Send jwt:false in WebSocket auth to avoid "No JWT found" error - server is patched to allow all operations
+            .replace('jwt:!!n.user.isPaidUser()&&n.userJwt', 'jwt:!1')
           if (patched === textData) _logError('[ERR] Patch failed')
           else {
             patched = `const user={
