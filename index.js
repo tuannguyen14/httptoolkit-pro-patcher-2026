@@ -39,7 +39,10 @@ if (isLinux && !isSudo && (argv._[0] === 'patch' || argv._[0] === 'restore')) {
 
 const appPath = (() => {
   const candidates = process.platform === 'win32'
-    ? [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'httptoolkit')]
+    ? [
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'HTTP Toolkit'),
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'httptoolkit'),
+      ]
     : [
         path.join('/opt', 'HTTP Toolkit'),
         path.join('/opt', 'httptoolkit'),
